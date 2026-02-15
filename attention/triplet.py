@@ -2,6 +2,7 @@
 from tensorflow import keras
 from keras.ops import mean , max , broadcast_to
 from keras.layers import Concatenate , Conv2D , BatchNormalization , Activation , Multiply , Add , GlobalAveragePooling2D , Dense , Permute , Average , Layer
+from attention.SE_block import se
 #--------------------------------
 # tensorflow is channel last
 class TripletAtt(Layer) : 
@@ -93,22 +94,6 @@ class TripletSeAttention(TripletAtt) :
         super().__init__(k_size)
         self.var = varient
         self.rr = reduction_ratio
-    def __SE_block(self , tensor , output="channel_scaled") :
-        GavgPoolTensor  = GlobalAveragePooling2D(keepdims=True)(tensor)
-        n_channels      = GavgPoolTensor.shape[-1]
-        hidden_out      = Dense(n_channels//self.rr , activation="relu" , kernel_initializer="he_normal")(GavgPoolTensor)
-        if output != "RAW" : # may be an error occure (Rub a debug test)
-            channel_weights = Dense(n_channels , activation="sigmoid")(hidden_out)
-            channel_scaled  = ([channel_weights , tensor])
-        elif output == "RAW" : 
-            channel_raw_score = Dense(n_channels , activation=None)(hidden_out)
-        #--
-        if output == "channel_scaled" :
-            return channel_scaled
-        elif output == "channel_weights" :
-            return channel_weights
-        elif output == "RAW" :
-            return channel_raw_score
     def __TriSE1(self , tensor) :
         br_1_out = self._branch_H_C(tensor)
         br_2_out = self._branch_W_C(tensor)
@@ -120,23 +105,23 @@ class TripletSeAttention(TripletAtt) :
         tensor_hat_br1       = self._Permutation(tensor , "H-axis")
         tensor_hat_br1       = self.__SE_block(tensor_hat_br1)
         tensor_hat_start_br1 = self._z_pool(tensor_hat_br1)
-        attention_map        = self._2DAttentionMap(tensor_hat_start_br1)
-        attention_out        = ([tensor_hat_br1 , attention_map])
+        attention_map        = self._2DAttentionMap(tensor_hat_start_br1 , branch=1)
+        attention_out        = self.multiply([tensor_hat_br1 , attention_map])
         output_tensor_br1   = self._Permutation(attention_out , "H-axis")
         #---
         tensor_hat_br2       = self._Permutation(tensor , "W-axis")
         tensor_hat_br2       = self.__SE_block(tensor_hat_br2)
         tensor_hat_start_br2 = self._z_pool(tensor_hat_br2)
-        attention_map        = self._2DAttentionMap(tensor_hat_start_br2)
-        attention_out        = ([tensor_hat_br2 , attention_map])
+        attention_map        = self._2DAttentionMap(tensor_hat_start_br2 , branch=2)
+        attention_out        = self.multiply([tensor_hat_br2 , attention_map])
         output_tensor_br2   = self._Permutation(attention_out , "W-axis")
         #---
         tensor_br3           = self.__SE_block(tensor)
         tensor_hat_br3       = self._z_pool(tensor_br3)
-        attention_map        = self._2DAttentionMap(tensor_hat_br3)
-        output_tensor_br3    = ([tensor , attention_map])
+        attention_map        = self._2DAttentionMap(tensor_hat_br3 , branch=3)
+        output_tensor_br3    = self.multiply([tensor , attention_map])
         #---
-        tensor_out = self.Avg([output_tensor_br1 , output_tensor_br2 , output_tensor_br3]) # error
+        tensor_out = self.Avg([output_tensor_br1 , output_tensor_br2 , output_tensor_br3])
         return tensor_out
     def __TriSE3(self , tensor) :
         tensor_hat_br1         = self._Permutation(tensor , "H-axis")
