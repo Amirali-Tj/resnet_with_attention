@@ -94,98 +94,113 @@ class TripletSeAttention(TripletAtt) :
         super().__init__(k_size)
         self.var = varient
         self.rr = reduction_ratio
-    def __TriSE1(self , tensor) :
-        br_1_out = self._branch_H_C(tensor)
-        br_2_out = self._branch_W_C(tensor)
-        br_3_out = self._branch_identify(tensor)
+        if varient == "TriSE1" :
+            self._SE_block = se(self.rr  , out="channel_scaled")
+        if varient == "TriSE2" :
+            self._SE_block1 = se(self.rr , out="channel_scaled")
+            self._SE_block2 = se(self.rr , out="channel_scaled")
+            self._SE_block3 = se(self.rr , out="channel_scaled")
+        if varient == "TriSE3" :
+            self._SE_block1 = se(self.rr , out="channel_weights")
+            self._SE_block2 = se(self.rr , out="channel_weights")
+            self._SE_block3 = se(self.rr , out="channel_weights")
+        if varient == "TriSE4" :
+            self._SE_block1 = se(self.rr , out="RAW")
+            self._SE_block2 = se(self.rr , out="RAW")
+            self._SE_block3 = se(self.rr , out="RAW")
+            self._SE_block4 = se(self.rr , out="channel_scaled")
+    def __TriSE1(self , tensor , training=None) :
+        br_1_out = self._branch_H_C(tensor , training=training)
+        br_2_out = self._branch_W_C(tensor , training=training)
+        br_3_out = self._branch_identify(tensor , training=training)
         br_unify = self.Add([br_1_out , br_2_out , br_3_out])
-        tensor_out = self.__SE_block(br_unify)
+        tensor_out = self._SE_block(br_unify)
         return tensor_out
-    def __TriSE2(self , tensor) :
+    def __TriSE2(self , tensor , training=None) :
         tensor_hat_br1       = self._Permutation(tensor , "H-axis")
-        tensor_hat_br1       = self.__SE_block(tensor_hat_br1)
+        tensor_hat_br1       = self._SE_block1(tensor_hat_br1)
         tensor_hat_start_br1 = self._z_pool(tensor_hat_br1)
-        attention_map        = self._2DAttentionMap(tensor_hat_start_br1 , branch=1)
+        attention_map        = self._2DAttentionMap(tensor_hat_start_br1 , branch=1 , training=training)
         attention_out        = self.multiply([tensor_hat_br1 , attention_map])
         output_tensor_br1   = self._Permutation(attention_out , "H-axis")
         #---
         tensor_hat_br2       = self._Permutation(tensor , "W-axis")
-        tensor_hat_br2       = self.__SE_block(tensor_hat_br2)
+        tensor_hat_br2       = self._SE_block2(tensor_hat_br2)
         tensor_hat_start_br2 = self._z_pool(tensor_hat_br2)
-        attention_map        = self._2DAttentionMap(tensor_hat_start_br2 , branch=2)
+        attention_map        = self._2DAttentionMap(tensor_hat_start_br2 , branch=2 , training=training)
         attention_out        = self.multiply([tensor_hat_br2 , attention_map])
         output_tensor_br2   = self._Permutation(attention_out , "W-axis")
         #---
-        tensor_br3           = self.__SE_block(tensor)
+        tensor_br3           = self._SE_block3(tensor)
         tensor_hat_br3       = self._z_pool(tensor_br3)
-        attention_map        = self._2DAttentionMap(tensor_hat_br3 , branch=3)
+        attention_map        = self._2DAttentionMap(tensor_hat_br3 , branch=3 , training=training)
         output_tensor_br3    = self.multiply([tensor , attention_map])
         #---
         tensor_out = self.Avg([output_tensor_br1 , output_tensor_br2 , output_tensor_br3])
         return tensor_out
-    def __TriSE3(self , tensor) :
+    def __TriSE3(self , tensor , training=None) :
         tensor_hat_br1         = self._Permutation(tensor , "H-axis")
         tensor_hat_start_br1   = self._z_pool(tensor_hat_br1)
-        attention_map          = self._2DAttentionMap(tensor_hat_start_br1)
-        attention_out          = ([tensor_hat_br1 , attention_map])
-        tensor_hat_br1_weights = self.__SE_block(tensor_hat_br1 , output="channel_weights")
-        branch1_scaled         = ([attention_out , tensor_hat_br1_weights])
+        attention_map          = self._2DAttentionMap(tensor_hat_start_br1 , branch=1 , training=training)
+        attention_out          = self.multiply([tensor_hat_br1 , attention_map])
+        tensor_hat_br1_weights = self._SE_block1(tensor_hat_br1)
+        branch1_scaled         = self.multiply([attention_out , tensor_hat_br1_weights])
         output_tensor_br1      = self._Permutation(branch1_scaled , "H-axis")
         #-----
         tensor_hat_br2         = self._Permutation(tensor , "W-axis")
         tensor_hat_start_br2   = self._z_pool(tensor_hat_br2)
-        attention_map          = self._2DAttentionMap(tensor_hat_start_br2)
-        attention_out          = ([tensor_hat_br2 , attention_map])
-        tensor_hat_br2_weights = self.__SE_block(tensor_hat_br2 , output="channel_weights")
-        branch2_scaled         = ([attention_out , tensor_hat_br2_weights])
+        attention_map          = self._2DAttentionMap(tensor_hat_start_br2 , branch=2 , training=training)
+        attention_out          = self.multiply([tensor_hat_br2 , attention_map])
+        tensor_hat_br2_weights = self._SE_block2(tensor_hat_br2)
+        branch2_scaled         = self.multiply([attention_out , tensor_hat_br2_weights])
         output_tensor_br2      = self._Permutation(branch2_scaled , "W-axis")
         #-----
         tensor_hat_br3         = self._z_pool(tensor)
-        attention_map          = self._2DAttentionMap(tensor_hat_br3)
-        attention_out          = ([tensor , attention_map])
-        tensor_hat_br3_weights = self.__SE_block(tensor , output="channel_weights")
-        output_tensor_br3      = ([attention_out , tensor_hat_br3_weights])
+        attention_map          = self._2DAttentionMap(tensor_hat_br3 , branch=3 , training=training)
+        attention_out          = self.multiply([tensor , attention_map])
+        tensor_hat_br3_weights = self._SE_block3(tensor)
+        output_tensor_br3      = self.multiply([attention_out , tensor_hat_br3_weights])
         #-----
         tensor_out = self.Avg([output_tensor_br1 , output_tensor_br2 , output_tensor_br3])
         return tensor_out
-    def __TriSE4(self,tensor) :
+    def __TriSE4(self , tensor , training=None) :
         tensor_hat_br1           = self._Permutation(tensor , "H-axis")
         tensor_hat_star_br1      = self._z_pool(tensor_hat_br1)
-        attention_map_raw        = self._2DAttentionMap(tensor_hat_star_br1 , output="RAW") # 2D vector
-        tensor_hat_br1_raw       = self.__SE_block(tensor_hat_br1 , output="RAW") # 1D vector
+        attention_map_raw        = self._2DAttentionMap(tensor_hat_star_br1 , branch=1 , training=training , output="RAW")
+        tensor_hat_br1_raw       = self._SE_block1(tensor_hat_br1) # 1D vector
         tensor_hat_br1_raw_B     = broadcast_to(tensor_hat_br1_raw , (attention_map_raw.shape[0] , attention_map_raw.shape[1] , attention_map_raw.shape[2] , tensor_hat_br1_raw.shape[-1]))
         AffineTransfomer         = self.Add([attention_map_raw , tensor_hat_br1_raw_B])
         AffineTransfomer_weights = Activation(activation="sigmoid")(AffineTransfomer)
-        attention_out            = ([AffineTransfomer_weights , tensor_hat_br1]) 
+        attention_out            = self.multiply([AffineTransfomer_weights , tensor_hat_br1]) 
         output_tensor_br1        = self._Permutation(attention_out , "H-axis")
         #-----
         tensor_hat_br2           = self._Permutation(tensor , "W-axis")
         tensor_hat_star_br2      = self._z_pool(tensor_hat_br2)
-        attention_map_raw        = self._2DAttentionMap(tensor_hat_star_br2 , output="RAW") # 2D vector
-        tensor_hat_br2_raw       = self.__SE_block(tensor_hat_br2 , output="RAW") # 1D vector
+        attention_map_raw        = self._2DAttentionMap(tensor_hat_star_br2 , branch=2 , training=training , output="RAW") # 2D vector
+        tensor_hat_br2_raw       = self._SE_block2(tensor_hat_br2) # 1D vector
         tensor_hat_br2_raw_B     = broadcast_to(tensor_hat_br2_raw , (attention_map_raw.shape[0] , attention_map_raw.shape[1] , attention_map_raw.shape[2] , tensor_hat_br2_raw.shape[-1]))
         AffineTransfomer         = self.Add([attention_map_raw , tensor_hat_br2_raw_B])
         AffineTransfomer_weights = Activation(activation="sigmoid")(AffineTransfomer)
-        attention_out            = ([AffineTransfomer_weights , tensor_hat_br2]) 
+        attention_out            = self.multiply([AffineTransfomer_weights , tensor_hat_br2]) 
         output_tensor_br2        = self._Permutation(attention_out , "W-axis")
         #-----
         tensor_hat_br3           = self._z_pool(tensor)
-        attention_map_raw        = self._2DAttentionMap(tensor_hat_br3 , output="RAW") # 2D vector
-        tensor_br3_raw           = self.__SE_block(tensor , output="RAW") # 1D vector
+        attention_map_raw        = self._2DAttentionMap(tensor_hat_br3 , branch=3 , training=training , output="RAW") # 2D vector
+        tensor_br3_raw           = self._SE_block3(tensor) # 1D vector
         tensor_br3_raw_B         = broadcast_to(tensor_br3_raw , (attention_map_raw.shape[0] , attention_map_raw.shape[1] , attention_map_raw.shape[2] , tensor_br3_raw.shape[-1]))
         AffineTransfomer         = self.Add([attention_map_raw , tensor_br3_raw_B])
         AffineTransfomer_weights = Activation(activation="sigmoid")(AffineTransfomer)
-        output_tensor_br3        = ([AffineTransfomer_weights , tensor]) 
+        output_tensor_br3        = self.multiply([AffineTransfomer_weights , tensor]) 
         #------
         br_unify   = self.Add([output_tensor_br1 , output_tensor_br2 , output_tensor_br3])
-        tensor_out = self.__SE_block(br_unify , output="channel_scaled")
+        tensor_out = self._SE_block4(br_unify)
         return tensor_out
-    def __call__(self, tensor):
+    def call(self, tensor , training=None):
         if self.var == "TriSE1" :
-            return self.__TriSE1(tensor)
+            return self.__TriSE1(tensor , training=training)
         if self.var == "TriSE2" :
-            return self.__TriSE2(tensor)
+            return self.__TriSE2(tensor , training=training)
         if self.var == "TriSE3" :
-            return self.__TriSE3(tensor)
+            return self.__TriSE3(tensor , training=training)
         if self.var == "TriSE4" :
-            return self.__TriSE4(tensor)
+            return self.__TriSE4(tensor , training=training)
