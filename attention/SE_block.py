@@ -2,7 +2,7 @@ from tensorflow import keras
 from keras.layers import Layer , GlobalAveragePooling2D , Dense , Multiply
 #---
 class se(Layer) :
-    def __init__(self , reduction_ratio , out="channel_scaled") : #constructor
+    def __init__(self , reduction_ratio=16 , out="channel_scaled") : #constructor
         super().__init__()
         self.rr  = reduction_ratio
         self.out = out
