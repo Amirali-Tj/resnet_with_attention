@@ -9,7 +9,7 @@ class se(Layer) :
         self.GAP = GlobalAveragePooling2D(keepdims=True)
         self.multiply = Multiply()
     def build(self, input_shape):
-        self.hidden = Dense(input_shape[-1]//self.rr , activation="relu" , kernel_initializer="he_normal")
+        self.hidden = Dense(max(input_shape[-1]//self.rr , 1) , activation="relu" , kernel_initializer="he_normal")
         if self.out == "channel_scaled" or self.out == "channel_weights" :
             self.score = Dense(input_shape[-1] , activation="sigmoid")
         elif self.out == "RAW" :
